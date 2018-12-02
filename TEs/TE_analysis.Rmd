@@ -1,0 +1,396 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+---
+title: "Bulk Data Processing -- TE analysis"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+Roman Reggiardo -- 11/16/2018  
+Last Update -- 11/16/2018
+
+### Setup:
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(ggsci)
+setwd('~/Desktop/Thesis/Projects/IPSC_KRAS/TEs/')
+```
+
+### Project Theme
+```{r}
+this_theme <- theme(text = element_text(size=15, face = 'bold', family = "sans"),
+      legend.title = element_text(size = 20),
+      axis.text.x = element_text(hjust=1, angle=40, color = 'black',
+                                 size = 15, face = 'bold'),
+      axis.text.y = element_text(color = 'black', 
+                                 size=15, face = 'bold'),
+      panel.background = element_rect(fill ='white'),
+      axis.line.x = element_line(size=1),
+      axis.line.y = element_line(size=1),
+      strip.background = element_blank(),
+      strip.text = element_text(face = 'bold', 
+                                size = 5, hjust=0.95),
+      legend.position='top',
+      legend.key = element_blank(),
+      axis.ticks.y = element_blank(), 
+      axis.title.y = element_text(face='bold'),
+      axis.ticks.x = element_line())
+```
+
+## Taking output from SalmonTE 
+
+### 1. Parse into one data tidy set
+
+Want the TPM, log2Fold Change and Pvalue of everything all in one spot  
+
+*  Going to change naming convention slightly: ad for the adherenet d5 ipscs and eb for the d7 ebs.
+```{r}
+ad_stat <- read.csv('te_out/Stat_test/results.csv')
+# filter by pvalue and keep only columns we are interested in
+ad_stat <- ad_stat %>% filter(pvalue < 0.05)
+trimm_ad_stat <- ad_stat[, c(1,2,3,5,8)]
+ad_tpm <- read.csv('te_out/SalmonTE_output/EXPR.csv')
+# rename columns to match experiment
+names(ad_tpm) <- c('TE', 'SCRAM_1', 'KRAS_1', 'SCRAM_2', 'KRAS_2', 'SCRAM_3', 'KRAS_3')
+
+####
+eb_stat <- read.csv('eb_te_out/Stat_test/results.csv')
+# filter by pvalue and keep only columns we are interested in
+eb_stat <- eb_stat %>% filter(pvalue < 0.05)
+trimm_eb_stat <- eb_stat[, c(1,2,3,5,8)]
+eb_tpm <- read.csv('eb_te_out/SalmonTE_output/EXPR.csv')
+# rename columns to match experiment
+names(eb_tpm) <- c('TE', 'SCRAM_1', 'KRAS_1', 'SCRAM_2', 'KRAS_2', 'SCRAM_3', 'KRAS_3')
+
+```
+
+Need to figure out best merging structure and also filter by average TPM > 1:
+```{r}
+ad <- merge(trimm_ad_stat, ad_tpm, by.x = 'name', by.y = 'TE')
+ad$tpMeans <- rowMeans(ad[, c(6:11)])
+ad <- ad %>% filter(tpMeans > 1)
+#ad$tpMeans <- NULL
+
+####
+eb <- merge(trimm_eb_stat, eb_tpm, by.x = 'name', by.y = 'TE')
+eb$tpMeans <- rowMeans(eb[, c(6:11)])
+eb <- eb %>% filter(tpMeans > 1)
+
+```
+
+Tidy:
+```{r}
+ad_tidy <- ad %>% gather(treatment, TPM, -c('name', 'class', 'clade', 
+                                 'log2FoldChange', 'pvalue', 'tpMeans')) %>%
+  separate(treatment, sep = '_', 1, into = c('Treatment', 'Rep')) %>%
+  group_by(name)
+
+eb_tidy <- eb %>% gather(treatment, TPM, -c('name', 'class', 'clade', 
+                                 'log2FoldChange', 'pvalue', 'tpMeans')) %>%
+  separate(treatment, sep = '_', 1, into = c('Treatment', 'Rep')) %>%
+  group_by(name)
+
+```
+
+Plot:
+```{r}
+ad_volc <- 
+  ggplot(ad, aes(log2FoldChange, -log10(pvalue), color = clade)) + 
+  this_theme + 
+  geom_point() +
+  geom_vline(xintercept = 0, linetype='dotted') +
+  ggrepel::geom_text_repel(aes(label = ifelse(tpMeans > 1, 
+                       as.character(name), '')),
+                           hjust = 0,
+                           direction = 'y', 
+                       color= 'black',
+                       segment.size = 0,
+                       point.padding = 1.25) + 
+  scale_color_npg() +
+  scale_x_continuous(limits = c(-5,5))
+
+eb_volc <- 
+  ggplot(eb, aes(log2FoldChange, -log10(pvalue), color = clade)) + 
+  this_theme + 
+  geom_point() +
+  geom_vline(xintercept = 0, linetype='dotted') +
+  ggrepel::geom_text_repel(aes(label = ifelse(tpMeans > 1, 
+                       as.character(name), '')),
+                           hjust = 0,
+                           direction = 'y', 
+                       color= 'black',
+                       segment.size = 0,
+                       point.padding = 1.25) + 
+  scale_color_npg() +
+  scale_x_continuous(limits = c(-5,5))
+
+eb_map <- ggplot(eb, aes(clade, name, 
+                         fill=log2FoldChange, 
+                         label = round(tpMeans))) +
+  geom_tile() +
+  geom_text() +
+  this_theme +
+  scale_fill_gsea()+ 
+  ylab('') + xlab('')
+
+ad_map <- ggplot(ad, aes(clade, name, 
+                         fill=log2FoldChange, 
+                         label = round(tpMeans))) +
+  geom_tile() +
+  geom_text() +
+  this_theme +
+  scale_fill_gsea() + 
+  ylab('') + xlab('')
+
+eb_volc
+eb_map
+ad_map
+ad_volc
+```
+
+Compare expression of DE TEs:
+```{r}
+ad$which <- 'ad'
+eb$which <- 'eb'
+eb <- eb %>% filter(name %in% ad$name)
+ad <- ad %>% filter(name %in% eb$name)
+ad_eb <- rbind(ad, eb)
+
+comp_te <- ggplot(ad_eb, aes(name, log2FoldChange, fill=which)) + 
+  geom_bar(stat = 'identity', position = 'dodge') +
+  this_theme +
+  theme(axis.text.x = element_text(hjust=1, angle=40)) +
+  xlab('') + 
+  scale_fill_manual(labels = c('iPSC','EB'), 
+                    values = c('purple', 'forestgreen'),
+                    name='') + 
+  geom_hline(yintercept = 0, linetype='dotted')
+```
+
+Now open the bed intersection from long read data:
+```{r}
+intersect_one <- read.delim('parsed_int_01.txt', header = F)
+head(intersect_one)
+
+
+```
+
+Before moving on want to look at read/alignment lengths:  
+*lines are placed at 1kb, 1.55kbm 2.45kb*
+```{r}
+repOneStats <- read.delim('read_stats.txt', sep = ' ', header = F)
+ggplot(repOneStats) + 
+  geom_density(aes(V1, V2), stat = 'identity') +
+  this_theme + ylab('') + xlab('') + 
+  geom_vline(xintercept = 1000) + 
+  geom_vline(xintercept = 1550) + 
+  geom_vline(xintercept = 2450) +
+  ggtitle('Read Length distribution of Rep-aligned subset')
+
+alnRepOneStats <- read.delim('unfiltered_aln_length.txt', header = F) 
+ggplot(alnRepOneStats) + 
+  geom_density(aes(V1)) + 
+  this_theme + ylab('') + xlab('') + 
+  geom_vline(xintercept = 1000) + 
+  geom_vline(xintercept = 1550) + 
+  geom_vline(xintercept = 2450)+
+  ggtitle('Read Length distribution of Alignments')
+
+filtAlnRepOneStats <- read.delim('filtered_aln_length.txt', header = F)
+ggplot(filtAlnRepOneStats) + 
+  geom_density(aes(V1)) + 
+  this_theme + ylab('') + xlab('') + 
+  geom_vline(xintercept = 1000) + 
+  geom_vline(xintercept = 1550) + 
+  geom_vline(xintercept = 2450)+
+  ggtitle('Read Length distribution of Alignments filtered by length')
+
+filtAlnRepOneQual <- read.delim('filtered_qual_spread.txt', header = F)
+ggplot(filtAlnRepOneQual) + 
+  geom_density(aes(V1)) + 
+  this_theme + ylab('') + xlab('') + 
+  geom_vline(xintercept = 3) +
+  geom_vline(xintercept = 30)+
+  ggtitle('MAPQ Score distribution of Rep-aligned subset')
+
+full_filt_len <- read.delim('full_filt_aln_length.txt', header = F)
+ggplot(full_filt_len) + 
+  geom_density(aes(V1)) + 
+  this_theme + ylab('') + xlab('') + 
+  geom_vline(xintercept = 1000) + 
+  geom_vline(xintercept = 1550) + 
+  geom_vline(xintercept = 2450)+
+  ggtitle('Read Length distribution of quality and length filtered Alignments')
+```
+
+Load in the bed created from the filtered alignments:
+```{r}
+read_ref <- read.delim('read_to_repeat_ref.txt', header=F)
+read_alnLen <- read.delim('fixed_read_alnLen.txt', header = F, sep = '')
+filt_intersect_one <- read.delim('parsed_filt_int_01.txt', header = F)
+nosplit_intersect_one <- read.delim('nosplit_filt_01_intersect.bed', header = F)
+te_only_one <- read.delim('repeat_only_intersect.bed', header = F)
+read_len <- read.delim('read_length.txt', header = F)
+names(read_len)[2] <- 'aln_len'
+
+te_only_one_length <- merge(te_only_one, read_len, by.x = 'V4', by.y = 'V1')
+te_only_one_length <- te_only_one_length %>% filter(V11/aln_len > 0.50)
+te_only_one_length$aln_len <- te_only_one_length$V3 - te_only_one_length$V2.x
+te_only_one_length <- te_only_one_length %>% group_by(V1, V10)
+te_only_one_length %>% count(V1, V10)
+
+ref <- merge(read_alnLen, read_ref, by.x = 'V1', by.y = 'V1')
+ref <- ref %>% separate(V2.y, sep='_',1, into=c('g','r','TE'))
+ref$g <- NULL
+ref$r <- NULL
+ref <- ref %>% unique()
+ref <- drop_na(ref)
+ref <- ref %>% 
+  filter(V1 %in% filt_intersect_one$V4)
+ref <- ref %>% filter(!grepl(')n', TE))
+ref <- ref %>% filter(!grepl('-rich', TE))
+names(ref) <- c('READ','ALN_LEN','TE')
+ref <- ref %>% filter(ALN_LEN > 1)
+
+te_only_ref 
+merge(ref, te_only_one, by.x = 'READ', by.y = 'V4') %>% unique()
+
+intersect_ref <- merge(filt_intersect_one, ref, by.x = 'V4', by.y = 'READ')
+
+overlap_filter_int_ref <- intersect_ref %>% 
+  filter(V9/ALN_LEN > 0.9) %>% 
+  filter(ALN_LEN > 1) %>%
+  unique()
+
+overlap_filter_int_ref <- overlap_filter_int_ref %>% filter(V9/ALN_LEN < 1.2)
+overlap_filter_int_ref <- overlap_filter_int_ref %>% filter(V1 != 'chrM')
+
+length(unique(overlap_filter_int_ref$V4))
+
+lnc_int_ref <- overlap_filter_int_ref %>% 
+  filter(V8 %in% consensus_tpm$GENE.x)
+
+gene_table <- as.data.frame(table(lnc_int_ref$V8))
+
+te_table <- as.data.frame(table(te_only_one$V10))
+
+
+tePLot <- ggplot(subset(te_table, Freq > 20)) +
+  geom_bar(aes(reorder(Var1, Freq), Freq), stat = 'identity') + 
+  this_theme + coord_flip()
+gePlot <- ggplot(subset(gene_table, Freq > 1)) +
+  geom_bar(aes(reorder(Var1, Freq), Freq), stat = 'identity') +
+  this_theme + coord_flip()
+
+ggplot(subset(te_only_one)) +
+  geom_bar(aes(V7)) + this_theme
+
+ggplot(nosplit_intersect_one) +
+  geom_bar(aes(V9)) + this_theme
+
+chr_overview <- ggplot(te_only_one_length) +
+  geom_bar(aes(V1, fill=V10)) + 
+  this_theme + scale_fill_discrete()
+
+chr3 <- te_only_one_length %>% subset(V1 == 'chr3') 
+
+chr3 %>% group_by_('V2.x', 'V10') %>% summarise(freq = ..count..)
+
+chr3 <- chr3 %>% count(V2.x, V10, V6)
+
+
+chr3_overview <- ggplot(chr3) + 
+  geom_bar(aes(V2.x, 
+               ifelse(V6 == '-', -1 * n, n),
+               color = V10),
+           stat='identity') + 
+  this_theme
+
+```
+
+
+No overlap with Gencode alignments, annotated with repeat masker:
+```{r}
+no_ol <- read.delim('no_ol.aln_01_sort.q45.rep_int.bed', header=F)
+
+no_ol <- no_ol %>% separate(V21, sep = ';', 1, into = c('g', 't', 'f', 'c'))
+no_ol$g <- substring(no_ol$g, 9)
+no_ol$c <- substring(no_ol$c, 11)
+no_ol <- subset(no_ol, grepl('_', V1) != T)
+length(unique(no_ol$V4))
+
+no_ol_chr <- unique(no_ol[,c(1,2,4,24)])
+
+ltr7_hervh <- subset(no_ol, g %in% c('LTR7', 'HERVH-int'))
+ltr7 <- unique(subset(ltr7_hervh, g == 'LTR7')[,c(1,2,4)])
+names(ltr7)[]
+HERVH <- unique(subset(ltr7_hervh, g == 'HERVH-int')[,c(1,2,4)])
+ltr_erv_dist <- ggplot(ltr7_hervh) + 
+  geom_density(aes(V1, fill=g), position = 'dodge') +
+  facet_wrap(~V1)  +
+  this_theme + 
+  theme(axis.text.x = element_blank(),
+                          axis.ticks.x = element_blank()) + 
+  scale_fill_aaas(name = '', alpha = 0.4) + 
+  xlab('') + ylab('')
+
+te_alone <- ggplot(no_ol) + 
+  geom_bar(aes(V1, fill=c)) + 
+  this_theme + 
+  scale_x_discrete(limits = c('chr1', 'chr2', 'chr3', 'chr4', 'chr5',
+                              'chr6', 'chr7', 'chr8', 'chr9',
+                              'chr10', 'chr11', 'chr12', 'chr13',
+                              'chr14', 'chr15', 'chr16', 'chr17',
+                              'chr18', 'chr19', 'chr20', 'chr21',
+                              'chr22', 'chrX', 'chrY')) + 
+  scale_fill_ucscgb(name='') + xlab('')
+
+```
+
+Overlap:
+```{r}
+ol <- read.delim('ol.aln_01_sort.q45.rep_int.bed', header=F)
+ol <- ol %>% separate(V9, sep = ';', 1, into = c('1','2','3','4','5','6'))
+ol <- unique(ol[, c(1,2,3,4,5,6,8,10,11,12)])
+ol <- ol %>% separate(V30, sep = ';', 1, into = c('g', 't', 'f', 'c'))
+ol$g <- substring(ol$g, 9)
+ol$c <- substring(ol$c, 11)
+ol <- subset(ol, grepl('_', V1) != T)
+ol <- subset(ol, !(c %in% c('Satellite', 'RNA', 'RC?')))
+length(unique(subset(ol, grepl('gene', `4`) == T)$`6`))
+
+ol_chr <- unique(ol[, c(1,6,7,8,9,13)])
+ol_chr <- subset(ol_chr, grepl('gene', `4`) == T)
+ol_chr <- unique(ol_chr[, c(1,3,5,6)])
+ol_genes <- substring(unique(ol_chr$`4`), 11)
+print(unlist(ol_genes))
+te_derived <- ggplot(ol) + 
+  geom_bar(aes(V1, fill=c)) + 
+  this_theme + 
+  scale_x_discrete(limits = c('chr1', 'chr2', 'chr3', 'chr4', 'chr5',
+                              'chr6', 'chr7', 'chr8', 'chr9',
+                              'chr10', 'chr11', 'chr12', 'chr13',
+                              'chr14', 'chr15', 'chr16', 'chr17',
+                              'chr18', 'chr19', 'chr20', 'chr21',
+                              'chr22', 'chr23', 'chrX', 'chrY')) + 
+  scale_fill_ucscgb(name='') + xlab('')
+
+ol
+```
+
+Compare with lncs from https://www.nature.com/articles/nature13804/figures/8:
+```{r}
+library(readxl)
+hervLncs <- read_xlsx('~/Downloads/nature13804-s2/Supplementary Table 10.xlsx')
+hervCons <- subset(consensus, GENE %in% hervLncs$gene_name)
+
+merge(hervCons, hervLncs, by.x = 'GENE', by.y = 'gene_name' )
+```
+
+
