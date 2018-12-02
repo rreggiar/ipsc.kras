@@ -1,0 +1,115 @@
+---
+title: "Nanopore Processing"
+output: html_notebook
+---
+```{r}
+library(tidyverse)
+library(ggsci)
+library(ggpubr)
+library(biomaRt)
+library(refGenome)
+```
+
+
+Notebook Theme:
+```{r}
+this_theme <- theme(text = element_text(size=20, family = "sans"),
+      legend.title = element_text(size = 20),
+      axis.text.x = element_text(color = 'black',
+                                 size = 15, face = 'bold'),
+      axis.text.y = element_text(color = 'black', 
+                                 size=15, face = 'bold'),
+      panel.background = element_rect(fill ='white'),
+      axis.line.x = element_line(size=1),
+      axis.line.y = element_line(size=1),
+      strip.background = element_blank(),
+      strip.text = element_text(face = 'bold', 
+                                size = 5, hjust=0.95),
+      legend.position='top',
+      legend.key = element_blank(),
+      axis.ticks.y = element_blank(), 
+      axis.title.y = element_text(face='bold'),
+      axis.ticks.x = element_line())
+```
+
+Some quick analysis of read data:
+```{r}
+stats04 <- read.delim('~/Desktop/Thesis/Projects/IPSC_KRAS/04/read_stats.txt', sep = ' ', header = F)
+names(stats04)[1] <- '04'
+stats01 <- read.delim('~/Desktop/Thesis/Projects/IPSC_KRAS/01/read_stats.txt', sep = ' ', header = F)
+names(stats01)[1] <- '01'
+stats12 <- read.delim('~/Desktop/Thesis/Projects/IPSC_KRAS/12/read_stats.txt', sep = ' ', header = F)
+names(stats12)[1] <- '12'
+
+s4 <- ggplot(stats04) + 
+  geom_density(aes(`04`)) + 
+  this_theme + ylab('Count') + xlab('Length')
+
+s1 <- ggplot(stats01) +
+  geom_bar(aes(`01`)) + 
+  this_theme + ylab('Count') + xlab('Length')
+
+ggplot(stats12) + 
+  geom_density(aes(`12`)) + 
+  this_theme + ylab('Count') + xlab('Length')
+
+te_ipsc <- read.csv('~/Desktop/Thesis/Projects/IPSC_KRAS/te_out/Stat_test/results.csv')
+
+te_plot <- ggplot(te_ipsc,
+                   aes(log2FoldChange, -log10(pvalue), color=clade, label=name, size=6)) + 
+  geom_point() +
+  geom_vline(xintercept = 0, linetype='dotted') + 
+  theme(text = element_text(size=14, family = "sans"),
+        legend.title = element_text(size = 10),
+        axis.text.x = element_text(color='black', size=10, face = 'bold'),
+        axis.text.y = element_text(face = 'bold', color = 'black', size=10),
+        panel.background = element_rect(fill ='white'),
+        axis.line.x = element_line(size = 1),
+        axis.line.y = element_line(size=1),
+        strip.background = element_blank(),
+        strip.text = element_blank(),
+        legend.position='top',
+        legend.key = element_blank(),
+        legend.text = element_text(face = 'bold', color = 'black', size=7.5),
+        axis.ticks.y = element_line(size=1.5, color='black'), 
+        axis.title = element_text(face='bold', size=10),
+        axis.ticks.x = element_line(size = 1.5, color='black'),
+        axis.ticks.length = unit(.25, 'cm')) + 
+  geom_hline(yintercept = -log10(0.05), linetype = 'dotted') +
+  ggrepel::geom_text_repel(aes(label = ifelse(abs(log2FoldChange) > 0.8 & pvalue < 0.05,
+                                              as.character(name), '')),
+                           segment.color = 'black', 
+                           color='black',
+                           segment.alpha = .5,
+                           xlim = c(-Inf, Inf), 
+                           ylim = c( -Inf, Inf),
+                           point.padding = 0.3,
+                           size = 4)
+```
+
+
+TPM
+```{r}
+quant1 <- read.delim('01_quant.sf')[, c(1,4)]
+names(quant1)[2] <- 'KD_TPM'
+quant4 <- read.delim('04_quant.sf')[, c(1,4)]
+names(quant4)[2] <- 'REP_1_TPM'
+quant12 <- read.delim('12_quant.sf')[, c(1,4)]
+names(quant12)[2] <- 'REP_2_TPM'
+
+quant_merge <- merge(quant1,quant12, by.x = 'Name', by.y = 'Name')
+quant_true_merge <- merge(quant4, quant_merge, by.x = 'Name', by.y = 'Name')
+
+write.csv(quant_true_merge, 'directRNA_tpm.csv')
+
+```
+
+Counts:
+```{r}
+counts <- read.delim('htseq_count_out.txt', header = F)
+names(counts) <- c('Gene','01','04','12')
+
+gencode <- read.delim('gencode.v29.names.txt')
+
+```
+

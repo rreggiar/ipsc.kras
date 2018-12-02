@@ -1,0 +1,16 @@
+*.txt
+*.sf
+01/
+04/
+12/
+*.csv
+lncs/
+eb/
+eb_out/
+ipsc/
+ipsc_out/
+TE/*.pdf
+TE/*.txt
+TE/te_out
+TE/*.pptx
+TE/*.bed
