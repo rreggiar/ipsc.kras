@@ -1,6 +1,6 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output: rmarkdown::github_document
 ---
 
 ---
@@ -351,6 +351,65 @@ te_alone <- ggplot(no_ol) +
                               'chr22', 'chrX', 'chrY')) + 
   scale_fill_ucscgb(name='') + xlab('')
 
+
+consensus_up <- read.csv('~/Desktop/Thesis/Projects/IPSC_KRAS/consensus_up.csv')
+# cut -d',' -f3 consensus_up.csv | tr -d '""' | sort | uniq > consensus_up_enst.txt
+# go to UCSC_GB to get coordinates
+consensus_tss <- read.delim('~/Desktop/Thesis/Projects/IPSC_KRAS/consensus_up_chr_tss.txt')
+consensus_tss <- consensus_tss %>% mutate(TSS = ifelse(strand == '+', txStart, txEnd))
+consensus_up_merge <- merge(consensus_tss, consensus_up, by.x = 'X.name', by.y = 'ENST')
+
+consensus_up_merge <- consensus_up_merge %>% dplyr::group_by('chrom')
+
+# https://stackoverflow.com/questions/6988184/combining-two-data-frames-of-different-lengths
+cbindPad <- function(...){
+args <- list(...)
+n <- sapply(args,nrow)
+mx <- max(n)
+pad <- function(x, mx){
+    if (nrow(x) < mx){
+        nms <- colnames(x)
+        padTemp <- matrix(NA, mx - nrow(x), ncol(x))
+        colnames(padTemp) <- nms
+        if (ncol(x)==0) {
+          return(padTemp)
+        } else {
+        return(rbind(x,padTemp))
+          }
+    }
+    else{
+        return(x)
+    }
+}
+rs <- lapply(args,pad,mx)
+return(do.call(cbind,rs))
+}
+
+bind_ltr_up <- cbindPad(consensus_up_merge, ltr7)
+
+chr20_bind <- cbindPad(subset(consensus_up_merge, chrom == 'chr20'), 
+         subset(ltr7, V1 == 'chr20'))
+
+consensus_up_trim <- consensus_up_merge[, c(1,2,6)]
+ltr7 <- add_column(ltr7, X.name = 'ltr7', .before = 1)
+consensus_up_trim <- add_column(consensus_up_trim, read = '1', .after = 3)
+consensus_up_trim$X.name <- 'ENST'
+names(ltr7)[c(2,3,4)] <- c('chrom', 'TSS', 'read') 
+bind.trim.ltr7 <- rbind(ltr7, consensus_up_trim)
+
+ggplot() + 
+  geom_density(aes(x=TSS), data = consensus_up_trim, fill = 'green', alpha=.3) +
+  geom_density(aes(x=TSS), data = ltr7, fill = 'yellow', alpha=.3) + 
+  this_theme + 
+  facet_wrap(~chrom, nrow=3, ncol = 8, scales = 'free') + 
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+ggplot(chr20_bind) + 
+  geom_point(aes(TSS, V2)) + 
+  this_theme 
 ```
 
 Overlap:

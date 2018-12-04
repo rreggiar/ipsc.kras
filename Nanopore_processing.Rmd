@@ -13,7 +13,7 @@ library(refGenome)
 
 Notebook Theme:
 ```{r}
-this_theme <- theme(text = element_text(size=20, family = "sans"),
+this_theme <- theme(text = element_text(size=12, family = "sans"),
       legend.title = element_text(size = 20),
       axis.text.x = element_text(color = 'black',
                                  size = 15, face = 'bold'),
@@ -53,7 +53,7 @@ ggplot(stats12) +
   geom_density(aes(`12`)) + 
   this_theme + ylab('Count') + xlab('Length')
 
-te_ipsc <- read.csv('~/Desktop/Thesis/Projects/IPSC_KRAS/te_out/Stat_test/results.csv')
+te_ipsc <- read.csv('~/Desktop/Thesis/Projects/IPSC_KRAS/TEs/te_out/Stat_test/results.csv')
 
 te_plot <- ggplot(te_ipsc,
                    aes(log2FoldChange, -log10(pvalue), color=clade, label=name, size=6)) + 
@@ -108,8 +108,93 @@ Counts:
 ```{r}
 counts <- read.delim('htseq_count_out.txt', header = F)
 names(counts) <- c('Gene','01','04','12')
-
+counts <- as.tibble(counts)
+#counts$`01`/colSums(count_gene$`01`)
 gencode <- read.delim('gencode.v29.names.txt')
+count_gene <- merge(counts, gencode, by.x = 'Gene', by.y = 'Geneid')
 
+
+```
+
+Correlation:
+```{r}
+c1 <- ggplot(count_gene) + 
+  geom_smooth(aes(`01`, `04`), method = 'lm') + 
+  geom_point(aes(`01`, `04`)) +
+  this_theme
+c2 <- ggplot(count_gene) + 
+  geom_smooth(aes(`01`, `12`), method = 'lm') +
+  geom_point(aes(`01`, `12`)) + 
+  this_theme
+c3 <- ggplot(count_gene) + 
+  geom_smooth(aes(`12`, `04`), method = 'lm') +
+  geom_point(aes(`12`, `04`)) +
+  this_theme
+c4 <- ggplot(count_gene) + 
+  geom_smooth(aes(`01`, `01`), method = 'lm') +
+  geom_point(aes(`01`, `01`)) +
+  this_theme
+
+cAll <- ggarrange(c1,c2,c3,c4)
+
+```
+
+Lnc_conservation:
+```{r}
+lnc_cons <- read.delim('~/Desktop/Thesis/Projects/IPSC_KRAS/lncs/lnc_summary_missing_zeros.txt', header=F)
+names(lnc_cons) <- c('Chr','Start',"End", 'Cons','SD')
+lnc_cons$Start <- lnc_cons$Start - 1
+
+lnc_bed <- read.delim('~/Desktop/Thesis/Projects/IPSC_KRAS/lncs/lnc_exon.bed', header = F)
+names(lnc_bed) <- c('Chr','Start',"End", 'Transcript')
+
+zero_exons <- anti_join(lnc_bed, lnc_cons)
+zero_exons$Cons <- 0
+zero_exons$SD <- 0
+zero_exons$Transcript <- NULL
+lnc_cons_final <- rbind(lnc_cons, zero_exons)
+lnc_cons_merge <- merge(lnc_cons_final, lnc_bed, by.all = c('Chr','Start','End'))
+lnc_cons_merge <- lnc_cons_merge %>% separate(Transcript, sep = '_e', into = c('ENST','junk'))
+lnc_cons_merge$junk <- NULL
+
+lnc_express_merge <- merge(lnc_cons_merge, consensus_lnc, by.all = 'ENST')
+lnc_cons_express <- lnc_express_merge %>% dplyr::group_by(GENE) %>% summarise(b = mean(b), cons = mean(Cons), sd = mean(SD))
+
+
+
+lnc_cons_plot <- ggplot(lnc_cons_express) + 
+  geom_point(aes(cons, b)) + 
+  geom_smooth(aes(cons, b), method = 'lm') +
+  this_theme
+
+```
+
+```{r}
+cons <- read.delim('~/Desktop/Thesis/Projects/IPSC_KRAS/lncs/all_exon_summary', header=F)
+names(cons) <- c('Chr','Start',"End", 'Cons','SD')
+cons$Start <- cons$Start - 1
+
+bed <- read.delim('~/Desktop/Thesis/Projects/IPSC_KRAS/lncs/all_exon.bed', header = F)
+names(bed) <- c('Chr','Start',"End", 'Transcript')
+
+all_zero_exons <- anti_join(lnc_bed, lnc_cons)
+all_zero_exons$Cons <- 0
+all_zero_exons$SD <- 0
+all_zero_exons$Transcript <- NULL
+all_cons_final <- rbind(cons, all_zero_exons)
+all_cons_merge <- merge(all_cons_final, bed, by.all = c('Chr','Start','End'))
+all_cons_merge <- all_cons_merge %>% separate(Transcript, sep = '_e', into = c('ENST','junk'))
+all_cons_merge$junk <- NULL
+
+all_express_merge <- merge(all_cons_merge, consensus, by.all = 'ENST')
+all_cons_express <- all_express_merge %>% dplyr::group_by(GENE) %>% summarise(b = mean(b), cons = mean(Cons), sd = mean(SD))
+
+
+subset(all_cons_express, GENE %in% hervCons$GENE)
+all_cons_plot <- ggplot(all_cons_express) + 
+  geom_point(aes(cons, b, color = ifelse(GENE %in% hervCons$GENE, 'HERV_LNC', 'Other'))) + 
+  geom_smooth(aes(cons, b), method = 'lm') +
+  this_theme + 
+  scale_color_tron(guide = F, name ='' )
 ```
 
